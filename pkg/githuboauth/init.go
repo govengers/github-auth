@@ -47,12 +47,10 @@ type Config struct {
 	AllowedAPIKeys []string
 
 	// APIKeyResolver resolves a presented API key that is not in AllowedAPIKeys
-	// to the user owning it (optional). Return nil for unknown or revoked keys.
-	// A resolved request is authenticated as that user: the returned teams drive
-	// the allowed-team check, admin status and relevant teams exactly like an
-	// OAuth session, and GetSession returns a session carrying the user information.
-	// Unlike AllowedAPIKeys, resolved keys do NOT bypass GetAdminMiddleware.
-	APIKeyResolver func(ctx context.Context, key string) *UserInformation
+	// to the principal behind it (optional). Return nil for unknown or revoked keys.
+	// See ResolvedAPIKey for how the result maps onto the request's auth state.
+	// Unlike AllowedAPIKeys, resolved keys never bypass GetAdminMiddleware.
+	APIKeyResolver func(ctx context.Context, key string) *ResolvedAPIKey
 
 	// Session cookie encryption keys.
 	// SecretKey must be 64 bytes (for HMAC-SHA512 signing).
@@ -84,6 +82,19 @@ type Config struct {
 	UserInfoPath     string // defaults to /auth/userinfo
 	LogoutPath       string // defaults to /auth/logout
 	RefreshTeamsPath string // defaults to /auth/refresh-teams
+}
+
+// ResolvedAPIKey is the principal behind an application-issued API key.
+type ResolvedAPIKey struct {
+	// Login becomes the session's Profile.Login (attribution), e.g. "api-key:ci".
+	Login string
+	// Teams drive the allowed-team check, admin status and relevant teams exactly
+	// like an OAuth session. nil skips the team check and never grants admin:
+	// the application vouches for the key itself.
+	Teams *[]Team
+	// Data is copied into the session's Data map for the application's own use,
+	// e.g. an access level. Read it back via GetSession(c).GetData(key).
+	Data map[string]any
 }
 
 // Handle provides access to the initialized OAuth system.

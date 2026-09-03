@@ -92,34 +92,42 @@ func (h *oauthHandler) hasAllowedTeam(teams *[]Team) bool {
 }
 
 // getAPIKeyResolverFunc adapts Config.APIKeyResolver for getApiKeyFunction.
-// A resolved key authenticates the request as the key's owner: team checks run
-// against the returned teams and GetSession yields a session for the user.
-func (h *oauthHandler) getAPIKeyResolverFunc(s *SessionStore, resolve func(context.Context, string) *UserInformation) func(*gin.Context, string) bool {
+// A resolved key authenticates the request as the resolved principal: GetSession
+// yields a session for it, and its teams (if any) go through the same checks as
+// an OAuth session.
+func (h *oauthHandler) getAPIKeyResolverFunc(s *SessionStore, resolve func(context.Context, string) *ResolvedAPIKey) func(*gin.Context, string) bool {
 	if resolve == nil {
 		return nil
 	}
 	return func(c *gin.Context, key string) bool {
-		userInformation := resolve(c.Request.Context(), key)
-		if userInformation == nil || userInformation.Profile == nil {
+		resolved := resolve(c.Request.Context(), key)
+		if resolved == nil || resolved.Login == "" {
 			return false
 		}
-		if !h.hasAllowedTeam(userInformation.Teams) {
-			log.Debug().Str("login", userInformation.Profile.Login).Msg("api key owner is not member of any allowed team")
+		if resolved.Teams != nil && !h.hasAllowedTeam(resolved.Teams) {
+			log.Debug().Str("login", resolved.Login).Msg("api key principal is not member of any allowed team")
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"message": "access denied",
 				"code":    "forbidden",
 			})
 			return true
 		}
+		data := map[string]any{}
+		for k, v := range resolved.Data {
+			data[k] = v
+		}
 		c.Set(s.apiKeySessionContextKey, &Session{
-			UserInformation: userInformation,
-			Data:            map[string]any{},
-			store:           s,
+			UserInformation: &UserInformation{
+				Profile: &UserProfile{Login: resolved.Login},
+				Teams:   resolved.Teams,
+			},
+			Data:  data,
+			store: s,
 		})
 		c.Set(h.config.isAuthenticatedContextKey, true)
-		c.Set(h.config.isAdminContextKey, h.isUserAdmin(userInformation.Teams))
-		c.Set(h.config.relevantTeamsContextKey, h.getRelevantTeams(userInformation.Teams))
-		log.Trace().Str("login", userInformation.Profile.Login).Msg("request authenticated via resolved api key")
+		c.Set(h.config.isAdminContextKey, h.isUserAdmin(resolved.Teams))
+		c.Set(h.config.relevantTeamsContextKey, h.getRelevantTeams(resolved.Teams))
+		log.Trace().Str("login", resolved.Login).Msg("request authenticated via resolved api key")
 		c.Next()
 		return true
 	}

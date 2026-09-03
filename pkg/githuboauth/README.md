@@ -265,21 +265,25 @@ When `AllowedAPIKeys` is configured, requests can authenticate via API key inste
 
 API key-authenticated requests bypass OAuth session checks entirely.
 
-### Per-user API keys
+### Application-issued API keys
 
-`APIKeyResolver` lets the application issue its own keys (for example one personal key per user, stored hashed in a database). It is consulted for any presented key that is not in `AllowedAPIKeys`:
+`APIKeyResolver` lets the application issue its own keys (stored hashed in a database, managed in its own UI). It is consulted for any presented key that is not in `AllowedAPIKeys`:
 
 ```go
-cfg.APIKeyResolver = func(ctx context.Context, key string) *githuboauth.UserInformation {
-    owner, ok := myKeys.Lookup(ctx, key) // return nil for unknown or revoked keys
+cfg.APIKeyResolver = func(ctx context.Context, key string) *githuboauth.ResolvedAPIKey {
+    k, ok := myKeys.Lookup(ctx, key) // return nil for unknown or revoked keys
     if !ok {
         return nil
     }
-    return &githuboauth.UserInformation{Profile: owner.Profile, Teams: owner.Teams}
+    return &githuboauth.ResolvedAPIKey{
+        Login: "api-key:" + k.Name,                     // attribution, Profile.Login of the session
+        Teams: nil,                                     // nil: no team check, never admin
+        Data:  map[string]any{"access": k.Access},      // available via GetSession(c).GetData("access")
+    }
 }
 ```
 
-A resolved request is authenticated **as that user**: the returned teams go through the allowed-team check, decide `IsAdmin` / `GetAdminMiddleware` and relevant teams, and `GetSessionStore().GetSession(c)` returns a session carrying the user information, so handlers need no special casing. Unlike `AllowedAPIKeys`, resolved keys do not bypass the admin check. Unknown keys get 401, owners without an allowed team get 403.
+A resolved request is authenticated as that principal: `GetSessionStore().GetSession(c)` returns a session carrying `Profile.Login` and `Data`, so handlers need no special casing (`OAuthToken` is nil, which distinguishes it from a browser session). If `Teams` is set they go through the allowed-team check (403 when none matches) and decide `IsAdmin` / `GetAdminMiddleware` like an OAuth session; with `Teams == nil` the application vouches for the key and it is never admin. Unknown keys get 401.
 
 ### Standalone API key middleware
 

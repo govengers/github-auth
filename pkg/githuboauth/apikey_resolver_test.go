@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func resolverTestRouter(t *testing.T, resolve func(context.Context, string) *UserInformation) (*gin.Engine, *Handle) {
+func resolverTestRouter(t *testing.T, resolve func(context.Context, string) *ResolvedAPIKey) (*gin.Engine, *Handle) {
 	t.Helper()
 	mock := newMockGitHubServer()
 	t.Cleanup(mock.close)
@@ -27,17 +27,18 @@ func resolverTestRouter(t *testing.T, resolve func(context.Context, string) *Use
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "no session"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"login": sess.UserInformation.Profile.Login, "isAdmin": handle.IsAdmin(c)})
+		access, _ := sess.GetData("access")
+		c.JSON(http.StatusOK, gin.H{"login": sess.UserInformation.Profile.Login, "isAdmin": handle.IsAdmin(c), "access": access})
 	})
 	return engine, handle
 }
 
-func userWithTeams(login string, teams ...string) *UserInformation {
+func userWithTeams(login string, teams ...string) *ResolvedAPIKey {
 	list := make([]Team, 0, len(teams))
 	for _, slug := range teams {
 		list = append(list, Team{Slug: slug, Organization: Organization{Login: "myorg"}})
 	}
-	return &UserInformation{Profile: &UserProfile{Login: login}, Teams: &list}
+	return &ResolvedAPIKey{Login: login, Teams: &list}
 }
 
 func getWithKey(engine *gin.Engine, path, key string) *httptest.ResponseRecorder {
@@ -49,12 +50,13 @@ func getWithKey(engine *gin.Engine, path, key string) *httptest.ResponseRecorder
 }
 
 func TestAPIKeyResolver(t *testing.T) {
-	keys := map[string]*UserInformation{
+	keys := map[string]*ResolvedAPIKey{
 		"dev-key":      userWithTeams("dev", "developers"),
 		"admin-key":    userWithTeams("boss", "developers", "admins"),
 		"outsider-key": userWithTeams("outsider", "marketing"),
+		"vouched-key":  {Login: "api-key:ci", Data: map[string]any{"access": "read_only"}},
 	}
-	engine, _ := resolverTestRouter(t, func(_ context.Context, key string) *UserInformation {
+	engine, _ := resolverTestRouter(t, func(_ context.Context, key string) *ResolvedAPIKey {
 		return keys[key]
 	})
 
@@ -71,6 +73,9 @@ func TestAPIKeyResolver(t *testing.T) {
 		{"static key still works", "/protected", "static-key", http.StatusOK, ""},
 		{"owner without allowed team is forbidden", "/protected", "outsider-key", http.StatusForbidden, ""},
 		{"unknown key is unauthorized", "/protected", "nope", http.StatusUnauthorized, ""},
+		{"vouched key without teams skips team check", "/whoami", "vouched-key", http.StatusOK, `"login":"api-key:ci"`},
+		{"vouched key carries data into the session", "/whoami", "vouched-key", http.StatusOK, `"access":"read_only"`},
+		{"vouched key is never admin", "/admin/dashboard", "vouched-key", http.StatusForbidden, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -90,7 +95,7 @@ func TestAPIKeyResolver_WithoutStaticKeys(t *testing.T) {
 	defer mock.close()
 	cfg := mock.testConfig()
 	cfg.AllowedAPIKeys = nil
-	cfg.APIKeyResolver = func(_ context.Context, key string) *UserInformation {
+	cfg.APIKeyResolver = func(_ context.Context, key string) *ResolvedAPIKey {
 		if key == "only-key" {
 			return userWithTeams("dev", "developers")
 		}
