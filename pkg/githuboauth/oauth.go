@@ -81,6 +81,50 @@ func (h *oauthHandler) getHandlersChain(s *SessionStore) gin.HandlersChain {
 	}
 }
 
+func (h *oauthHandler) hasAllowedTeam(teams *[]Team) bool {
+	teamSlugs := GetTeamSlugs(teams)
+	for _, allowedTeam := range h.config.allowedTeams {
+		if slices.Contains(teamSlugs, allowedTeam) {
+			return true
+		}
+	}
+	return false
+}
+
+// getAPIKeyResolverFunc adapts Config.APIKeyResolver for getApiKeyFunction.
+// A resolved key authenticates the request as the key's owner: team checks run
+// against the returned teams and GetSession yields a session for the user.
+func (h *oauthHandler) getAPIKeyResolverFunc(s *SessionStore, resolve func(context.Context, string) *UserInformation) func(*gin.Context, string) bool {
+	if resolve == nil {
+		return nil
+	}
+	return func(c *gin.Context, key string) bool {
+		userInformation := resolve(c.Request.Context(), key)
+		if userInformation == nil || userInformation.Profile == nil {
+			return false
+		}
+		if !h.hasAllowedTeam(userInformation.Teams) {
+			log.Debug().Str("login", userInformation.Profile.Login).Msg("api key owner is not member of any allowed team")
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"message": "access denied",
+				"code":    "forbidden",
+			})
+			return true
+		}
+		c.Set(s.apiKeySessionContextKey, &Session{
+			UserInformation: userInformation,
+			Data:            map[string]any{},
+			store:           s,
+		})
+		c.Set(h.config.isAuthenticatedContextKey, true)
+		c.Set(h.config.isAdminContextKey, h.isUserAdmin(userInformation.Teams))
+		c.Set(h.config.relevantTeamsContextKey, h.getRelevantTeams(userInformation.Teams))
+		log.Trace().Str("login", userInformation.Profile.Login).Msg("request authenticated via resolved api key")
+		c.Next()
+		return true
+	}
+}
+
 func (h *oauthHandler) isUserAdmin(teams *[]Team) bool {
 	if teams == nil || len(h.config.adminTeams) == 0 {
 		return false
@@ -254,14 +298,7 @@ func (h *oauthHandler) getAuthHandler(s *SessionStore) gin.HandlerFunc {
 		}
 
 		checkForAllowedTeam := func() bool {
-			sessionTeams := sess.UserInformation.Teams
-			teamSlugs := GetTeamSlugs(sessionTeams)
-			for _, allowedTeam := range h.config.allowedTeams {
-				if slices.Contains(teamSlugs, allowedTeam) {
-					return true
-				}
-			}
-			return false
+			return h.hasAllowedTeam(sess.UserInformation.Teams)
 		}
 
 		setAuthContext := func() {

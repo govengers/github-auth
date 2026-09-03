@@ -31,9 +31,11 @@ func hashAPIKey(key string) [sha256.Size]byte {
 // getApiKeyFunction returns a function that checks for API key authentication.
 // It returns true if the request was handled (either valid key or invalid key with 401),
 // and false if no API key was provided (allowing the next auth method to run).
+// Keys not in allowedApiKeys are offered to resolve (optional), which reports
+// whether it handled the request; otherwise the request is rejected with 401.
 // F-02: The contextKey parameter is a random string generated at Init() time,
 // preventing external middleware from spoofing API key authentication.
-func getApiKeyFunction(allowedApiKeys []string, contextKey string, isAuthenticatedContextKey string) func(*gin.Context) bool {
+func getApiKeyFunction(allowedApiKeys []string, contextKey string, isAuthenticatedContextKey string, resolve func(*gin.Context, string) bool) func(*gin.Context) bool {
 	// Pre-hash all valid keys at initialization time
 	hashedKeys := make([][sha256.Size]byte, len(allowedApiKeys))
 	for i, key := range allowedApiKeys {
@@ -65,6 +67,9 @@ func getApiKeyFunction(allowedApiKeys []string, contextKey string, isAuthenticat
 					return true
 				}
 			}
+			if resolve != nil && resolve(c, apiKeyHeaderValue) {
+				return true
+			}
 			// F-H: Use AbortWithStatusJSON instead of AbortWithError to avoid
 			// leaking error details in the response body.
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
@@ -83,7 +88,7 @@ func getApiKeyFunction(allowedApiKeys []string, contextKey string, isAuthenticat
 func GetApiKeyAuthMiddleware(allowedApiKeys []string) gin.HandlerFunc {
 	contextKey := generateContextKey()
 	isAuthenticatedKey := generateContextKey()
-	handler := getApiKeyFunction(allowedApiKeys, contextKey, isAuthenticatedKey)
+	handler := getApiKeyFunction(allowedApiKeys, contextKey, isAuthenticatedKey, nil)
 	return func(c *gin.Context) {
 		handled := handler(c)
 		if !handled {

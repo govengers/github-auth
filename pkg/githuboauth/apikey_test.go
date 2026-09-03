@@ -17,7 +17,7 @@ const testContextKey = "test-context-key"
 const testIsAuthenticatedKey = "test-is-authenticated-key"
 
 func TestAPIKeyValidation_ValidKey_XAPIKey(t *testing.T) {
-	handler := getApiKeyFunction([]string{"test-key-123"}, testContextKey, testIsAuthenticatedKey)
+	handler := getApiKeyFunction([]string{"test-key-123"}, testContextKey, testIsAuthenticatedKey, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -38,7 +38,7 @@ func TestAPIKeyValidation_ValidKey_XAPIKey(t *testing.T) {
 }
 
 func TestAPIKeyValidation_ValidKey_BearerAuth(t *testing.T) {
-	handler := getApiKeyFunction([]string{"test-key-456"}, testContextKey, testIsAuthenticatedKey)
+	handler := getApiKeyFunction([]string{"test-key-456"}, testContextKey, testIsAuthenticatedKey, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -56,7 +56,7 @@ func TestAPIKeyValidation_ValidKey_BearerAuth(t *testing.T) {
 }
 
 func TestAPIKeyValidation_InvalidKey_Returns401(t *testing.T) {
-	handler := getApiKeyFunction([]string{"correct-key"}, testContextKey, testIsAuthenticatedKey)
+	handler := getApiKeyFunction([]string{"correct-key"}, testContextKey, testIsAuthenticatedKey, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -73,7 +73,7 @@ func TestAPIKeyValidation_InvalidKey_Returns401(t *testing.T) {
 }
 
 func TestAPIKeyValidation_InvalidKey_NoErrorLeak(t *testing.T) {
-	handler := getApiKeyFunction([]string{"correct-key"}, testContextKey, testIsAuthenticatedKey)
+	handler := getApiKeyFunction([]string{"correct-key"}, testContextKey, testIsAuthenticatedKey, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -96,7 +96,7 @@ func TestAPIKeyValidation_InvalidKey_NoErrorLeak(t *testing.T) {
 }
 
 func TestAPIKeyValidation_NoKey_PassesThrough(t *testing.T) {
-	handler := getApiKeyFunction([]string{"test-key"}, testContextKey, testIsAuthenticatedKey)
+	handler := getApiKeyFunction([]string{"test-key"}, testContextKey, testIsAuthenticatedKey, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -109,7 +109,7 @@ func TestAPIKeyValidation_NoKey_PassesThrough(t *testing.T) {
 }
 
 func TestAPIKeyValidation_EmptyBearer(t *testing.T) {
-	handler := getApiKeyFunction([]string{"test-key"}, testContextKey, testIsAuthenticatedKey)
+	handler := getApiKeyFunction([]string{"test-key"}, testContextKey, testIsAuthenticatedKey, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -123,7 +123,7 @@ func TestAPIKeyValidation_EmptyBearer(t *testing.T) {
 }
 
 func TestAPIKeyValidation_BearerWithoutSpace(t *testing.T) {
-	handler := getApiKeyFunction([]string{"test-key"}, testContextKey, testIsAuthenticatedKey)
+	handler := getApiKeyFunction([]string{"test-key"}, testContextKey, testIsAuthenticatedKey, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -137,7 +137,7 @@ func TestAPIKeyValidation_BearerWithoutSpace(t *testing.T) {
 }
 
 func TestAPIKeyValidation_MultipleKeys(t *testing.T) {
-	handler := getApiKeyFunction([]string{"key-one", "key-two", "key-three"}, testContextKey, testIsAuthenticatedKey)
+	handler := getApiKeyFunction([]string{"key-one", "key-two", "key-three"}, testContextKey, testIsAuthenticatedKey, nil)
 
 	for _, key := range []string{"key-one", "key-two", "key-three"} {
 		w := httptest.NewRecorder()
@@ -157,7 +157,7 @@ func TestAPIKeyValidation_MultipleKeys(t *testing.T) {
 }
 
 func TestAPIKeyValidation_WhitespaceTrimmingKey(t *testing.T) {
-	handler := getApiKeyFunction([]string{"test-key"}, testContextKey, testIsAuthenticatedKey)
+	handler := getApiKeyFunction([]string{"test-key"}, testContextKey, testIsAuthenticatedKey, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)

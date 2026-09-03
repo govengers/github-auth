@@ -265,6 +265,22 @@ When `AllowedAPIKeys` is configured, requests can authenticate via API key inste
 
 API key-authenticated requests bypass OAuth session checks entirely.
 
+### Per-user API keys
+
+`APIKeyResolver` lets the application issue its own keys (for example one personal key per user, stored hashed in a database). It is consulted for any presented key that is not in `AllowedAPIKeys`:
+
+```go
+cfg.APIKeyResolver = func(ctx context.Context, key string) *githuboauth.UserInformation {
+    owner, ok := myKeys.Lookup(ctx, key) // return nil for unknown or revoked keys
+    if !ok {
+        return nil
+    }
+    return &githuboauth.UserInformation{Profile: owner.Profile, Teams: owner.Teams}
+}
+```
+
+A resolved request is authenticated **as that user**: the returned teams go through the allowed-team check, decide `IsAdmin` / `GetAdminMiddleware` and relevant teams, and `GetSessionStore().GetSession(c)` returns a session carrying the user information, so handlers need no special casing. Unlike `AllowedAPIKeys`, resolved keys do not bypass the admin check. Unknown keys get 401, owners without an allowed team get 403.
+
 ### Standalone API key middleware
 
 For routes that only accept API keys (no OAuth fallback):

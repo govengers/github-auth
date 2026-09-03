@@ -51,6 +51,9 @@ type SessionStore struct {
 	// F-15: Optional base transport for HTTP clients (used in tests to avoid
 	// mutating http.DefaultTransport globally)
 	baseTransport http.RoundTripper
+	// Gin context key under which a session for a request authenticated via
+	// Config.APIKeyResolver is stored (random per Init, see F-02).
+	apiKeySessionContextKey string
 }
 
 // Session represents an authenticated user session.
@@ -108,6 +111,13 @@ func NewSessionStore(options *SessionStoreOptions) (*SessionStore, error) {
 }
 
 func (s *SessionStore) GetSession(c *gin.Context) (*Session, bool) {
+	if s.apiKeySessionContextKey != "" {
+		if v, ok := c.Get(s.apiKeySessionContextKey); ok {
+			if sess, ok := v.(*Session); ok {
+				return sess, true
+			}
+		}
+	}
 	gorillaSession, err := s.cookieStore.Get(c.Request, s.cookieName)
 	if err != nil {
 		log.Debug().Err(err).Msg("failed to get session from cookie store")

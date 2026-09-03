@@ -2,6 +2,7 @@ package githuboauth
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -17,12 +18,12 @@ import (
 // Config holds all configuration needed to initialize GitHub OAuth.
 type Config struct {
 	// OAuth2 settings
-	ClientID     string
-	ClientSecret string
-	RedirectURI  string
-	Scopes       []string
-	AuthURL      string // e.g. https://github.com/login/oauth/authorize
-	TokenURL     string // e.g. https://github.com/login/oauth/access_token
+	ClientID      string
+	ClientSecret  string
+	RedirectURI   string
+	Scopes        []string
+	AuthURL       string // e.g. https://github.com/login/oauth/authorize
+	TokenURL      string // e.g. https://github.com/login/oauth/access_token
 	DeviceAuthURL string // optional
 
 	// GitHub API base URL. Defaults to https://api.github.com.
@@ -44,6 +45,14 @@ type Config struct {
 	// API key authentication (optional fallback).
 	// Requests with a valid API key bypass OAuth.
 	AllowedAPIKeys []string
+
+	// APIKeyResolver resolves a presented API key that is not in AllowedAPIKeys
+	// to the user owning it (optional). Return nil for unknown or revoked keys.
+	// A resolved request is authenticated as that user: the returned teams drive
+	// the allowed-team check, admin status and relevant teams exactly like an
+	// OAuth session, and GetSession returns a session carrying the user information.
+	// Unlike AllowedAPIKeys, resolved keys do NOT bypass GetAdminMiddleware.
+	APIKeyResolver func(ctx context.Context, key string) *UserInformation
 
 	// Session cookie encryption keys.
 	// SecretKey must be 64 bytes (for HMAC-SHA512 signing).
@@ -381,18 +390,12 @@ func newHandle(cfg *Config) (*Handle, error) {
 	isAdminContextKey := generateContextKey()
 	relevantTeamsContextKey := generateContextKey()
 
-	var apiKeyHandler func(*gin.Context) bool
-	if len(cfg.AllowedAPIKeys) > 0 {
-		apiKeyHandler = getApiKeyFunction(cfg.AllowedAPIKeys, apiKeyContextKey, isAuthenticatedContextKey)
-	}
-
 	handler, err := newOAuthHandler(&oauthHandlerConfig{
 		oauthConfig:               oauthConfig,
 		gitHubConnector:           connector,
 		allowedTeams:              cfg.AllowedTeams,
 		adminTeams:                cfg.AdminTeams,
 		relevantTeams:             cfg.RelevantTeams,
-		apiKeyHandler:             apiKeyHandler,
 		cookieSecure:              cookieSecure,
 		baseURL:                   cfg.BaseURL,
 		loginPath:                 cfg.LoginPath,
@@ -407,6 +410,14 @@ func newHandle(cfg *Config) (*Handle, error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	if len(cfg.AllowedAPIKeys) > 0 || cfg.APIKeyResolver != nil {
+		sessionStore.apiKeySessionContextKey = generateContextKey()
+		handler.config.apiKeyHandler = getApiKeyFunction(
+			cfg.AllowedAPIKeys, apiKeyContextKey, isAuthenticatedContextKey,
+			handler.getAPIKeyResolverFunc(sessionStore, cfg.APIKeyResolver),
+		)
 	}
 
 	return &Handle{
