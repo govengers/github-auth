@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> **Archived: superseded by [govengers/auth](https://github.com/govengers/auth).** This repository gets no further updates, security fixes included. Released versions of `github.com/mxcd/github-fwd-auth` keep resolving through the Go module proxy, so existing builds keep working. Migrate with the guide: [github-fwd-auth to `github`](https://github.com/govengers/auth/blob/main/docs/migration.md#3-github-fwd-auth-library-v14x-to-github), and for the image [the forward-auth binaries to `ghcr.io/govengers/forwardauth`](https://github.com/govengers/auth/blob/main/docs/migration.md#4-the-forward-auth-binaries-to-forwardauth).
+
 ## GitHub Forward Auth
 
 This project is a `traefik` forward auth middleware that uses GitHub OAuth to authenticate users.
